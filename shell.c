@@ -1,14 +1,13 @@
-#include  <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include "./lib/linenoise.h"
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
-
+#include "./lib/linenoise.h"
 
 #define PROMPT "$ "
 #define HISTORY_LENGTH 1024
-#define MAX_ARGS 1024
+#define MAX_ARGS 1024 
 #define TOKEN_SEP " \t"
 #define PATH_MAX 4096
 
@@ -25,7 +24,6 @@ int s_read(char *input, char **args) {
     return i;
 }
 
-
 int s_execute(char *cmd, char **cmd_args) {
   fprintf(stdout, "Executing `%s`!\n", cmd);
 
@@ -41,7 +39,7 @@ int s_execute(char *cmd, char **cmd_args) {
   if (pid == 0) {
     execvp(cmd, cmd_args);
   } else {
-    //Wait
+    // wait
     if (waitpid (pid, &status, 0) != pid) {
       fprintf(stderr, "Could not wait!\n");
       return -1;
@@ -66,60 +64,81 @@ void (*BUILTIN_TABLE[]) (char **args, size_t n_args) = {
 };
 
 Builtin builtin_code(char *cmd) {
-    if (!strncmp(cmd, "cd", 2)) {
-        return CD;
-    } else if (!strncmp(cmd, "pwd", 3)) {
-        return PWD;
-    } else {
-        return INVALID;
-    }
+  if (!strncmp(cmd, "cd", 2)) {
+    return CD;
+  } else if (!strncmp(cmd, "pwd", 3)) {
+    return PWD;
+  } else {
+    return INVALID;
+  }
 }
-
-
-
 
 int is_builtin(char *cmd) {
-    return builtin_code(cmd) != INVALID;
+  return builtin_code(cmd) != INVALID;
 }
-
-
 
 void s_execute_builtin(char *cmd, char **args, size_t n_args) {
-    BUILTIN_TABLE[builtin_code(cmd)](args, n_args);
+  BUILTIN_TABLE[builtin_code(cmd)](args, n_args);
 }
 
+void refresh_cwd(void) {
+  if (getcwd(CWD, sizeof(CWD)) == NULL) {
+    fprintf(stderr, "Error: Could not read working dir");
+    exit(1);
+  }
+}
 
+void builtin_impl_cd(char **args, size_t n_args) {
+  char *new_dir = *args;
+  if (chdir(new_dir) != 0) {
+    fprintf(stderr, "Error: Could not change directory");
+    exit(1);
+  }
+  refresh_cwd();
+}
+
+void builtin_impl_pwd(char **args, size_t n_args) {
+  fprintf(stdout, "%s\n", CWD);
+}
 
 int main(void) {
-    if (! linenoiseHistorySetMaxLen(HISTORY_LENGTH)) {
-        fprintf(stderr, "Could not set linenoise history!");
-        exit(1);
-    }
+  refresh_cwd();
+  
+  if (!linenoiseHistorySetMaxLen(HISTORY_LENGTH)) {
+    fprintf(stderr, "Could not set linenoise history!");
+    exit(1);    
+  }
 
-    char *line;
-    char *args[MAX_ARGS];
-    while((line = linenoise(PROMPT)) != NULL) {
-    
-    //Read step        
+  char *line;
+  char *args[MAX_ARGS];
+  while((line = linenoise(PROMPT)) != NULL) {
 
+    // read step
     int args_read = s_read(line, args);
-    fprintf(stdout, "Read %d args\n", args_read);    
+
+    fprintf(stdout, "Read %d args\n", args_read);
     for (int i = 0; i < args_read; i++) {
-        fprintf(stdout, "arg[%d] = %s\n", i, args[i]);
+      fprintf(stdout, "arg[%d] = %s\n", i, args[i]);
     }
 
-// Skip empty lines
+    // skip empty lines
     if (args_read == 0) {
-        linenoiseFree(line);
-        continue;
+      linenoiseFree(line);
+      continue;
     }
 
     char *cmd = args[0];
     char **cmd_args = args;
-    s_execute(cmd, cmd_args);
-    linenoiseHistoryAdd(line);
-    linenoiseFree(line);
+    if (is_builtin(cmd)) {
+      
+      s_execute_builtin(cmd, (cmd_args + 1), args_read - 1);
+    } else {
+      s_execute(cmd, cmd_args);
     }
-    
-    return 0;
-} 
+
+    linenoiseHistoryAdd(line);
+    linenoiseFree(line);    
+  }
+
+  return 0;
+}
